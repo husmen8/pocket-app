@@ -1,0 +1,291 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Pocket Planner</title>
+<!-- A static page: your data travels inside the link after '#', which browsers never send to the server. -->
+<script src="https://telegram.org/js/telegram-web-app.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/pako/2.1.0/pako.min.js"></script>
+<style>
+  :root {
+    --bg: var(--tg-theme-bg-color, #ffffff);
+    --bg2: var(--tg-theme-secondary-bg-color, #f2f3f5);
+    --text: var(--tg-theme-text-color, #15171a);
+    --hint: var(--tg-theme-hint-color, #8a8f98);
+    --link: var(--tg-theme-link-color, #2a7de1);
+    --btn: var(--tg-theme-button-color, #2a7de1);
+    --btn-text: var(--tg-theme-button-text-color, #ffffff);
+    --line: color-mix(in srgb, var(--hint) 25%, transparent);
+    --warn: #e5484d; --ok: #30a46c; --dl: #d97706;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) { --bg: var(--tg-theme-bg-color, #17191c); --bg2: var(--tg-theme-secondary-bg-color, #212428);
+      --text: var(--tg-theme-text-color, #eceef1); --hint: var(--tg-theme-hint-color, #8d939c); }
+  }
+  * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+  body { margin: 0; background: var(--bg); color: var(--text); font: 15px/1.4 -apple-system, system-ui, "Segoe UI", Roboto, sans-serif; }
+  header { position: sticky; top: 0; background: var(--bg); z-index: 5; padding: 12px 16px 0; }
+  h1 { font-size: 20px; margin: 0 0 2px; }
+  .sub { color: var(--hint); font-size: 13px; }
+  .add { display: flex; gap: 8px; margin: 10px 0; }
+  .add input { flex: 1; border: 0; border-radius: 12px; padding: 11px 12px; background: var(--bg2); color: var(--text); font-size: 15px; }
+  .add button, .btn { border: 0; border-radius: 12px; padding: 0 14px; background: var(--btn); color: var(--btn-text); font-size: 15px; font-weight: 600; }
+  nav { display: flex; gap: 4px; overflow-x: auto; padding-bottom: 8px; border-bottom: 1px solid var(--line); }
+  nav button { flex: 1; border: 0; background: none; color: var(--hint); padding: 8px 6px; font-size: 14px; font-weight: 600; border-radius: 10px; white-space: nowrap; }
+  nav button.on { background: var(--bg2); color: var(--text); }
+  main { padding: 8px 16px 96px; }
+  .sec { color: var(--hint); font-size: 12px; font-weight: 700; text-transform: uppercase; letter-spacing: .04em; margin: 16px 0 6px; }
+  .item { display: flex; align-items: center; gap: 10px; padding: 10px 12px; background: var(--bg2); border-radius: 12px; margin-bottom: 6px; }
+  .item .time { width: 46px; flex: none; font-variant-numeric: tabular-nums; color: var(--hint); font-size: 13px; }
+  .item .t { flex: 1; min-width: 0; overflow-wrap: anywhere; }
+  .item .meta { color: var(--hint); font-size: 12px; }
+  .item.done .t { text-decoration: line-through; color: var(--hint); }
+  .item.over { box-shadow: inset 3px 0 0 var(--warn); }
+  .item.dl { box-shadow: inset 3px 0 0 var(--dl); }
+  .check { width: 22px; height: 22px; flex: none; border-radius: 50%; border: 2px solid var(--hint); background: none; padding: 0; }
+  .done .check { background: var(--ok); border-color: var(--ok); }
+  .now { display: flex; align-items: center; gap: 8px; color: var(--warn); font-size: 12px; font-weight: 700; margin: 4px 0 8px; }
+  .now::after { content: ""; flex: 1; height: 2px; background: var(--warn); border-radius: 2px; }
+  .empty { color: var(--hint); text-align: center; padding: 28px 8px; }
+  .grid { display: grid; grid-template-columns: repeat(7, 1fr); gap: 4px; text-align: center; }
+  .grid .h { color: var(--hint); font-size: 12px; padding: 4px 0; }
+  .day { aspect-ratio: 1; border: 0; border-radius: 10px; background: var(--bg2); color: var(--text); font-size: 14px; position: relative; padding: 0; }
+  .day.other { opacity: .35; } .day.today { outline: 2px solid var(--btn); } .day.sel { background: var(--btn); color: var(--btn-text); }
+  .dots { position: absolute; bottom: 5px; left: 0; right: 0; display: flex; gap: 2px; justify-content: center; }
+  .dots i { width: 5px; height: 5px; border-radius: 50%; background: var(--link); } .dots i.d { background: var(--dl); }
+  .monthbar { display: flex; align-items: center; justify-content: space-between; margin: 8px 0; }
+  .monthbar button { border: 0; background: var(--bg2); color: var(--text); border-radius: 10px; width: 36px; height: 32px; font-size: 18px; }
+  .bar { height: 8px; background: var(--bg2); border-radius: 6px; overflow: hidden; margin-top: 4px; }
+  .bar b { display: block; height: 100%; background: var(--btn); } .bar b.hot { background: var(--warn); }
+  .row { display: flex; justify-content: space-between; gap: 8px; }
+  .search { width: 100%; border: 0; border-radius: 12px; padding: 10px 12px; background: var(--bg2); color: var(--text); font-size: 15px; margin: 8px 0; }
+  .sheet-bg { position: fixed; inset: 0; background: rgba(0,0,0,.35); display: none; z-index: 10; }
+  .sheet { position: fixed; left: 0; right: 0; bottom: 0; background: var(--bg); border-radius: 18px 18px 0 0; padding: 16px 16px calc(16px + env(safe-area-inset-bottom)); z-index: 11; transform: translateY(110%); transition: transform .2s; }
+  .sheet.open { transform: none; } .sheet-bg.open { display: block; }
+  .sheet h2 { font-size: 17px; margin: 0 0 4px; } .sheet .orig { color: var(--hint); font-size: 13px; margin-bottom: 12px; }
+  .acts { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
+  .acts button { border: 0; border-radius: 12px; padding: 12px 6px; background: var(--bg2); color: var(--text); font-size: 14px; font-weight: 600; }
+  .acts .primary { background: var(--btn); color: var(--btn-text); } .acts .danger { color: var(--warn); }
+  .pick { display: flex; gap: 8px; margin-top: 10px; } .pick input { flex: 1; border: 0; border-radius: 12px; padding: 10px; background: var(--bg2); color: var(--text); font-size: 15px; }
+  #save { position: fixed; left: 16px; right: 16px; bottom: calc(16px + env(safe-area-inset-bottom)); height: 48px; display: none; z-index: 6; }
+  .pending { color: var(--link); font-size: 12px; }
+</style>
+</head>
+<body>
+<header>
+  <h1 id="title">Pocket Planner</h1>
+  <div class="sub" id="sub"></div>
+  <form class="add" id="addform"><input id="addtext" autocomplete="off"><button id="addbtn">＋</button></form>
+  <nav id="tabs"></nav>
+</header>
+<main id="view"></main>
+<button class="btn" id="save"></button>
+<div class="sheet-bg" id="sheetbg"></div>
+<div class="sheet" id="sheet"></div>
+<script>
+const tg = window.Telegram && Telegram.WebApp;
+const L = {
+  en: { today: "Today", week: "Week", month: "Month", notes: "Notes", money: "Money", add: "Add… e.g. call mom at 18:00",
+        allday: "To-do & deadlines", timed: "Schedule", overdue: "Still open", nothing: "Nothing planned. Enjoy 🌱",
+        save: n => `Save ${n} change${n > 1 ? "s" : ""}`, done: "✅ Done", h1: "+1 hour", tom: "Tomorrow", wk: "Next week",
+        letgo: "🧹 Let go", move: "Move", undo: "↩ Undo", search: "Search notes…", spent: "Spent in", budget: "budget",
+        nodata: "Open this from the 📱 App button in the chat.", added: "will be added", noNotes: "No notes yet.",
+        noMoney: "No expenses this month.", asof: "as of", days: ["Mon","Tue","Wed","Thu","Fri","Sat","Sun"],
+        months: ["January","February","March","April","May","June","July","August","September","October","November","December"] },
+  tr: { today: "Bugün", week: "Hafta", month: "Ay", notes: "Notlar", money: "Para", add: "Ekle… örn. annemi ara 18:00",
+        allday: "Yapılacaklar ve son tarihler", timed: "Program", overdue: "Hâlâ açık", nothing: "Plan yok. İyi günler 🌱",
+        save: n => `${n} değişikliği kaydet`, done: "✅ Tamam", h1: "+1 saat", tom: "Yarın", wk: "Gelecek hafta",
+        letgo: "🧹 Bırak", move: "Taşı", undo: "↩ Geri al", search: "Notlarda ara…", spent: "Harcama", budget: "bütçe",
+        nodata: "Bunu sohbetteki 📱 App butonundan aç.", added: "eklenecek", noNotes: "Henüz not yok.",
+        noMoney: "Bu ay harcama yok.", asof: "güncel:", days: ["Pzt","Sal","Çar","Per","Cum","Cmt","Paz"],
+        months: ["Ocak","Şubat","Mart","Nisan","Mayıs","Haziran","Temmuz","Ağustos","Eylül","Ekim","Kasım","Aralık"] },
+};
+const TAG = { thought: "💭", idea: "💡", question: "❓", todo: "✔️", feeling: "🫶", link: "🔗", file: "📷" };
+const SYM = { TRY: "TL", EUR: "€", USD: "$", JPY: "¥", GBP: "£" };
+
+function decode() {
+  const m = location.hash.match(/d=([^&]+)/);
+  if (!m) return null;
+  try {
+    let b = m[1].replace(/-/g, "+").replace(/_/g, "/"); while (b.length % 4) b += "=";
+    const bytes = Uint8Array.from(atob(b), c => c.charCodeAt(0));
+    return JSON.parse(pako.inflateRaw(bytes, { to: "string" }));
+  } catch (e) { return null; }
+}
+const D = decode() || { l: "en", n: new Date().toISOString().slice(0, 16), items: [], dl: [], notes: [], m: { c: [], b: {}, ym: "", cur: "TRY" }, empty: true };
+const T = L[D.l] || L.en;
+const NOW = new Date(D.n);                       // the bot's clock for this person (their time zone)
+const ymd = d => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+const TODAY = ymd(NOW);
+const ops = [];                                   // changes to send back
+let tab = "today", sel = TODAY, monthOff = 0, q = "";
+
+if (tg) { tg.ready(); tg.expand(); document.documentElement.dataset.theme = tg.colorScheme; }
+document.getElementById("addtext").placeholder = T.add;
+document.getElementById("sub").textContent = D.empty ? T.nodata : `${dayName(NOW)} · ${T.asof} ${D.n.slice(11, 16)}`;
+
+function dayName(d) { return `${T.days[(d.getDay() + 6) % 7]} ${d.getDate()} ${T.months[d.getMonth()].slice(0, 3)}`; }
+function dateOf(it) { return it.w.slice(0, 10); }
+function money(v, c) { return `${Math.round(v * 100) / 100} ${SYM[c] || c}`.replace(/\B(?=(\d{3})+(?!\d))/g, " "); }
+function esc(s) { return String(s).replace(/[&<>"]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c]); }
+
+function itemsOn(day) { return D.items.filter(it => !it.gone && dateOf(it) === day); }
+function deadlinesOn(day) { return D.dl.filter(d => d.s <= day && day <= d.e); }
+
+function itemRow(it, opts = {}) {
+  const over = it.k === "t" && dateOf(it) < TODAY && !it.done;
+  const time = it.k === "r" ? it.w.slice(11, 16) : "";
+  const meta = [opts.showDay ? dayName(new Date(it.w)) : "", it.r ? "🔁" : "", it.moved ? "📅" : ""].filter(Boolean).join(" ");
+  return `<div class="item ${it.done ? "done" : ""} ${over ? "over" : ""}" data-i="${it.i}">
+    <button class="check" data-check="${it.i}" aria-label="done"></button>
+    ${time ? `<span class="time">${time}</span>` : ""}
+    <span class="t">${esc(it.t)}${meta ? `<div class="meta">${meta}</div>` : ""}</span></div>`;
+}
+function dlRow(d) {
+  const range = d.s === d.e ? "" : ` · ${d.s.slice(5)} → ${d.e.slice(5)}`;
+  return `<div class="item dl"><span class="t">📅 ${esc(d.t)}<div class="meta">${esc(d.p)} · ${esc(d.y)}${range}</div></span></div>`;
+}
+
+function viewToday() {
+  const overdue = D.items.filter(it => !it.gone && it.k === "t" && dateOf(it) < TODAY);
+  const todos = itemsOn(TODAY).filter(it => it.k === "t"), timed = itemsOn(TODAY).filter(it => it.k === "r").sort((a, b) => a.w < b.w ? -1 : 1);
+  const dls = deadlinesOn(TODAY).concat(D.dl.filter(d => d.s > TODAY && d.s <= ymd(new Date(NOW.getTime() + 3 * 864e5))));
+  let h = "";
+  if (todos.length || dls.length) h += `<div class="sec">${T.allday}</div>` + todos.map(i => itemRow(i)).join("") + dls.map(dlRow).join("");
+  if (overdue.length) h += `<div class="sec">${T.overdue}</div>` + overdue.map(i => itemRow(i, { showDay: true })).join("");
+  if (timed.length) {
+    h += `<div class="sec">${T.timed}</div>`;
+    const nowHM = D.n.slice(11, 16); let shown = false;
+    for (const it of timed) { if (!shown && it.w.slice(11, 16) >= nowHM) { h += `<div class="now">${nowHM}</div>`; shown = true; } h += itemRow(it); }
+    if (!shown) h += `<div class="now">${nowHM}</div>`;
+  }
+  h += pendingAdds();
+  return h || `<div class="empty">${T.nothing}</div>`;
+}
+function viewWeek() {
+  let h = "";
+  for (let k = 0; k < 7; k++) {
+    const d = new Date(NOW.getTime() + k * 864e5), day = ymd(d);
+    const its = itemsOn(day).sort((a, b) => (a.k === "t" ? "0" : a.w) < (b.k === "t" ? "0" : b.w) ? -1 : 1), dls = deadlinesOn(day);
+    if (!its.length && !dls.length) continue;
+    h += `<div class="sec">${k === 0 ? T.today : dayName(d)}</div>` + its.map(i => itemRow(i)).join("") + dls.map(dlRow).join("");
+  }
+  return (h || `<div class="empty">${T.nothing}</div>`) + pendingAdds();
+}
+function viewMonth() {
+  const first = new Date(NOW.getFullYear(), NOW.getMonth() + monthOff, 1);
+  const start = new Date(first); start.setDate(1 - (first.getDay() + 6) % 7);
+  let h = `<div class="monthbar"><button data-mo="-1">‹</button><b>${T.months[first.getMonth()]} ${first.getFullYear()}</b><button data-mo="1">›</button></div><div class="grid">`;
+  h += T.days.map(d => `<div class="h">${d.slice(0, 2)}</div>`).join("");
+  for (let k = 0; k < 42; k++) {
+    const d = new Date(start); d.setDate(start.getDate() + k); const day = ymd(d);
+    const n = itemsOn(day).length, dl = deadlinesOn(day).length;
+    const dots = "<i></i>".repeat(Math.min(n, 3)) + (dl ? '<i class="d"></i>' : "");
+    h += `<button class="day ${d.getMonth() !== first.getMonth() ? "other" : ""} ${day === TODAY ? "today" : ""} ${day === sel ? "sel" : ""}" data-day="${day}">${d.getDate()}<span class="dots">${dots}</span></button>`;
+  }
+  h += "</div>";
+  const its = itemsOn(sel), dls = deadlinesOn(sel);
+  h += `<div class="sec">${dayName(new Date(sel + "T12:00"))}</div>` + (its.map(i => itemRow(i)).join("") + dls.map(dlRow).join("") || `<div class="empty">—</div>`);
+  return h;
+}
+function viewNotes() {
+  const list = D.notes.filter(n => !q || n.t.toLowerCase().includes(q.toLowerCase()));
+  return `<input class="search" id="search" placeholder="${T.search}" value="${esc(q)}">` +
+    (list.map(n => `<div class="item"><span class="t">${TAG[n.g] || "💭"} ${linkify(esc(n.t))}<div class="meta">${n.d}</div></span></div>`).join("") || `<div class="empty">${T.noNotes}</div>`);
+}
+function linkify(s) { return s.replace(/(https?:\/\/[^\s<]+)/g, '<a href="$1" style="color:var(--link)">$1</a>'); }
+function viewMoney() {
+  const rows = D.m.c; if (!rows.length) return `<div class="empty">${T.noMoney}</div>`;
+  const max = Math.max(...rows.map(r => r[2])), totals = {};
+  rows.forEach(r => totals[r[1]] = (totals[r[1]] || 0) + r[2]);
+  let h = `<div class="sec">${T.spent} ${D.m.ym}: ${Object.entries(totals).map(([c, v]) => money(v, c)).join(" + ")}</div>`;
+  for (const [cat, cur, v] of rows) {
+    const b = D.m.b[cat], pct = b ? Math.min(100, Math.round(100 * v / b)) : Math.round(100 * v / max);
+    h += `<div style="margin:10px 0"><div class="row"><span>${esc(cat)}</span><span>${money(v, cur)}${b ? ` / ${money(b, D.m.cur)}` : ""}</span></div>
+          <div class="bar"><b class="${b && v >= 0.8 * b ? "hot" : ""}" style="width:${pct}%"></b></div></div>`;
+  }
+  return h;
+}
+function pendingAdds() {
+  const adds = ops.filter(o => o.o === "add");
+  return adds.length ? adds.map(o => `<div class="item"><span class="t">＋ ${esc(o.t)} <span class="pending">· ${T.added}</span></span></div>`).join("") : "";
+}
+
+const VIEWS = { today: viewToday, week: viewWeek, month: viewMonth, notes: viewNotes, money: viewMoney };
+function render() {
+  document.getElementById("tabs").innerHTML = Object.keys(VIEWS).map(k => `<button class="${k === tab ? "on" : ""}" data-tab="${k}">${T[k]}</button>`).join("");
+  document.getElementById("view").innerHTML = VIEWS[tab]();
+  const s = document.getElementById("search");
+  if (s) { s.oninput = e => { q = e.target.value; const pos = e.target.selectionStart; render(); const n = document.getElementById("search"); n.focus(); n.setSelectionRange(pos, pos); }; }
+  updateSave();
+}
+function updateSave() {
+  const n = ops.length, label = T.save(n);
+  if (tg && tg.MainButton && tg.platform !== "unknown") {
+    if (n) { tg.MainButton.setText(label); tg.MainButton.show(); } else tg.MainButton.hide();
+  } else {
+    const b = document.getElementById("save"); b.textContent = label; b.style.display = n ? "block" : "none";
+  }
+}
+function send() {
+  const data = JSON.stringify(ops.map(({ o, i, w, t }) => ({ o, i, w, t })));
+  if (tg && tg.sendData && tg.platform !== "unknown") tg.sendData(data);
+  else alert("(outside Telegram) would send:\n" + data);
+}
+if (tg && tg.MainButton) tg.MainButton.onClick(send);
+document.getElementById("save").onclick = send;
+
+function record(it, op) {
+  for (let k = ops.length - 1; k >= 0; k--) if (ops[k].i === it.i && ops[k].o !== "add") ops.splice(k, 1);   // last change wins
+  ops.push(op); tg && tg.HapticFeedback && tg.HapticFeedback.impactOccurred("light");
+}
+function act(it, what, value) {
+  if (what === "done") { it.done = !it.done; if (it.done) record(it, { o: "done", i: it.i }); else ops.splice(ops.findIndex(o => o.i === it.i), 1); }
+  if (what === "del") { it.gone = true; record(it, { o: "del", i: it.i }); }
+  if (what === "move") { it.w = value; it.k = value.length === 10 ? "t" : "r"; it.moved = true; record(it, { o: "move", i: it.i, w: value }); }
+  closeSheet(); render();
+}
+function shift(it, ms, keepTime) {
+  const base = it.k === "r" ? new Date(it.w) : new Date(dateOf(it) + "T09:00");
+  const d = new Date(Math.max(base.getTime(), NOW.getTime()) + ms);
+  return keepTime && it.k === "t" ? ymd(d) : `${ymd(d)}T${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`;
+}
+function openSheet(it) {
+  const sheet = document.getElementById("sheet");
+  sheet.innerHTML = `<h2>${esc(it.t)}</h2><div class="orig">${it.o ? "“" + esc(it.o) + "”" : ""} ${it.r ? "· 🔁" : ""}</div>
+    <div class="acts"><button class="primary" data-a="done">${T.done}</button><button data-a="h1">${T.h1}</button><button data-a="tom">${T.tom}</button>
+    <button data-a="wk">${T.wk}</button><button class="danger" data-a="del">${T.letgo}</button><button data-a="close">✕</button></div>
+    <div class="pick"><input type="${it.k === "t" ? "date" : "datetime-local"}" id="when" value="${it.k === "t" ? dateOf(it) : it.w}"><button class="btn" data-a="pick">${T.move}</button></div>`;
+  sheet.onclick = e => {
+    const a = e.target.dataset.a; if (!a) return;
+    if (a === "close") return closeSheet();
+    if (a === "done") return act(it, "done");
+    if (a === "del") return act(it, "del");
+    if (a === "h1") return act(it, "move", shift(it, 36e5));
+    if (a === "tom") { const d = new Date(NOW.getTime() + 864e5); return act(it, "move", it.k === "t" ? ymd(d) : `${ymd(d)}T${it.w.slice(11, 16)}`); }
+    if (a === "wk") return act(it, "move", it.k === "t" ? ymd(new Date(new Date(dateOf(it) + "T12:00").getTime() + 7 * 864e5)) : shift(it, 7 * 864e5));
+    if (a === "pick") { const v = document.getElementById("when").value; if (v) act(it, "move", v); }
+  };
+  sheet.classList.add("open"); document.getElementById("sheetbg").classList.add("open");
+}
+function closeSheet() { document.getElementById("sheet").classList.remove("open"); document.getElementById("sheetbg").classList.remove("open"); }
+document.getElementById("sheetbg").onclick = closeSheet;
+
+document.body.addEventListener("click", e => {
+  const t = e.target.closest("[data-tab],[data-check],[data-i],[data-day],[data-mo]"); if (!t) return;
+  if (t.dataset.tab) { tab = t.dataset.tab; render(); return; }
+  if (t.dataset.mo) { monthOff += +t.dataset.mo; render(); return; }
+  if (t.dataset.day) { sel = t.dataset.day; render(); return; }
+  const it = D.items.find(x => String(x.i) === (t.dataset.check || t.dataset.i)); if (!it) return;
+  if (t.dataset.check) { act(it, "done"); return; }
+  openSheet(it);
+});
+document.getElementById("addform").onsubmit = e => {
+  e.preventDefault(); const inp = document.getElementById("addtext"), v = inp.value.trim(); if (!v) return;
+  ops.push({ o: "add", t: v }); inp.value = ""; render();       // the bot reads it exactly like a chat message
+};
+render();
+</script>
+</body>
+</html>
